@@ -4,7 +4,7 @@ import { MongoClient } from 'mongodb';
 import 'dotenv/config';
 
 const app = express();
-const PORT = 5000;
+const PORT = process.env.PORT || 5000;
 
 // Middlewares
 app.use(cors());
@@ -35,6 +35,13 @@ const bookingCollection = db.collection("bookings");
 // 4. Create GET API Route for studios
 app.get('/studios', async (req, res) => {
   const result = await studiosCollection.find().toArray();
+  res.send(result);
+});
+
+
+app.post('/studios', async (req, res) => {
+  const studioData = req.body;
+  const result = await studiosCollection.insertOne(studioData);
   res.send(result);
 });
 
