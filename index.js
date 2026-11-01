@@ -30,7 +30,7 @@ const storage = multer.diskStorage({
 });
 const upload = multer({
   storage,
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: 20 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (file.mimetype.startsWith('image/')) cb(null, true);
     else cb(new Error('Only image files are allowed'));
@@ -45,7 +45,7 @@ app.use(express.json());
 // Mongodb
 const client = new MongoClient(process.env.MONGODB_URI);
 
-export async function connectToMongoDB() {
+async function connectToMongoDB() {
   try {
     await client.connect();
     console.log("You successfully connected to MongoDB!");
@@ -77,6 +77,18 @@ app.post('/studios', async (req, res) => {
 });
 
 
+// Image Upload API
+app.post('/upload', upload.single('image'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).send({ error: 'No image uploaded' });
+  }
+
+  const imageUrl = `http://localhost:${PORT}/uploads/${req.file.filename}`;
+
+  res.send({ imageUrl });
+});
+
+
 // Single Studio Details API
 app.get('/studios/:id', async (req, res) => {
   const id = req.params.id;
@@ -85,6 +97,34 @@ app.get('/studios/:id', async (req, res) => {
   res.send(result);
 });
 
+
+
+// Update a studio 
+app.put('/studios/:id', async (req, res) => {
+  const id = req.params.id;
+  const updatedData = req.body;
+
+  const filter = { _id: new ObjectId(id) };
+  const updateDoc = {
+    $set: updatedData,
+  };
+
+  const result = await studiosCollection.updateOne(filter, updateDoc);
+
+  res.send(result);
+});
+
+
+// Delete a studio
+app.delete('/studios/:id', async (req, res) => {
+  const id = req.params.id;
+
+  const query = { _id: new ObjectId(id) };
+
+  const result = await studiosCollection.deleteOne(query);
+
+  res.send(result);
+});
 
 
 
