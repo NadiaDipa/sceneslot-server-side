@@ -1,12 +1,12 @@
 
-import express from 'express';
-import cors from 'cors';
-import { MongoClient, ObjectId } from 'mongodb';
-import multer from 'multer';
-import path from 'path';
-import fs from 'fs';
-import { fileURLToPath } from 'url';
-import 'dotenv/config';
+import express from "express";
+import cors from "cors";
+import { MongoClient, ObjectId } from "mongodb";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
+import { fileURLToPath } from "url";
+import "dotenv/config";
 import { auth } from "./auth.js";
 import { fromNodeHeaders } from "better-auth/node";
 
@@ -16,20 +16,20 @@ const PORT = process.env.PORT || 5000;
 // Uploads folder
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const uploadsDir = path.join(__dirname, 'uploads');
+const uploadsDir = path.join(__dirname, "uploads");
 
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
 // Serve uploaded images
-app.use('/uploads', express.static(uploadsDir));
+app.use("/uploads", express.static(uploadsDir));
 
 // Multer image storage
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadsDir),
   filename: (req, file, cb) => {
-    const unique = Date.now() + '-' + Math.round(Math.random() * 1e6);
+    const unique = Date.now() + "-" + Math.round(Math.random() * 1e6);
     const ext = path.extname(file.originalname).toLowerCase();
 
     cb(null, `studio-${unique}${ext}`);
@@ -40,10 +40,10 @@ const upload = multer({
   storage,
   limits: { fileSize: 20 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) {
+    if (file.mimetype.startsWith("image/")) {
       cb(null, true);
     } else {
-      cb(new Error('Only image files are allowed'));
+      cb(new Error("Only image files are allowed"));
     }
   },
 });
@@ -51,16 +51,12 @@ const upload = multer({
 // Middlewares
 app.use(
   cors({
-    origin: [
-      "http://localhost:3000",
-      "http://localhost:3001",
-    ],
+    origin: ["http://localhost:3000", "http://localhost:3001"],
     credentials: true,
-  })
+  }),
 );
 
 app.use(express.json());
-
 
 // MongoDB Connection
 const client = new MongoClient(process.env.MONGODB_URI);
@@ -83,7 +79,6 @@ const db = connectClient.db("sceneslot-db");
 const studiosCollection = db.collection("studios");
 const userCollection = db.collection("users");
 const bookingCollection = db.collection("bookings");
-
 
 // Verify logged-in user
 async function verifySession(req, res, next) {
@@ -111,7 +106,6 @@ async function verifySession(req, res, next) {
   }
 }
 
-
 // Studio ownership filter
 function getStudioOwnerFilter(user) {
   return {
@@ -123,13 +117,11 @@ function getStudioOwnerFilter(user) {
   };
 }
 
-
 // Convert time to minutes
 function toMinutes(time) {
   const [hour, minute] = time.split(":").map(Number);
   return hour * 60 + minute;
 }
-
 
 // Convert minutes to HH:MM format
 function formatTime(minutes) {
@@ -139,7 +131,6 @@ function formatTime(minutes) {
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
-
 // Normalize booking status for frontend
 function formatStatus(status) {
   const normalized = String(status || "pending").toLowerCase();
@@ -147,9 +138,8 @@ function formatStatus(status) {
   return normalized.charAt(0).toUpperCase() + normalized.slice(1);
 }
 
-
 // GET: All Studios
-app.get('/studios', async (req, res) => {
+app.get("/studios", async (req, res) => {
   try {
     const result = await studiosCollection.find().toArray();
     res.send(result);
@@ -159,9 +149,8 @@ app.get('/studios', async (req, res) => {
   }
 });
 
-
 // POST: Add Studio
-app.post('/studios', verifySession, async (req, res) => {
+app.post("/studios", verifySession, async (req, res) => {
   try {
     const studioData = {
       ...req.body,
@@ -183,9 +172,8 @@ app.post('/studios', verifySession, async (req, res) => {
   }
 });
 
-
 // GET: Featured Studios (Latest 6)
-app.get('/featured-studios', async (req, res) => {
+app.get("/featured-studios", async (req, res) => {
   try {
     const result = await studiosCollection
       .find()
@@ -200,12 +188,11 @@ app.get('/featured-studios', async (req, res) => {
   }
 });
 
-
 // POST: Image Upload
-app.post('/upload', upload.single('image'), (req, res) => {
+app.post("/upload", upload.single("image"), (req, res) => {
   if (!req.file) {
     return res.status(400).send({
-      error: 'No image uploaded',
+      error: "No image uploaded",
     });
   }
 
@@ -214,9 +201,8 @@ app.post('/upload', upload.single('image'), (req, res) => {
   res.send({ imageUrl });
 });
 
-
 // GET: Single Studio Details
-app.get('/studios/:id', async (req, res) => {
+app.get("/studios/:id", async (req, res) => {
   try {
     const id = req.params.id;
 
@@ -239,9 +225,8 @@ app.get('/studios/:id', async (req, res) => {
   }
 });
 
-
 // PUT: Update Studio (Owner Only)
-app.put('/studios/:id', verifySession, async (req, res) => {
+app.put("/studios/:id", verifySession, async (req, res) => {
   try {
     const id = req.params.id;
 
@@ -250,13 +235,8 @@ app.put('/studios/:id', verifySession, async (req, res) => {
     }
 
     // Prevent changing ownership through request body
-    const {
-      ownerId,
-      ownerEmail,
-      ownerName,
-      createdAt,
-      ...updatedData
-    } = req.body;
+    const { ownerId, ownerEmail, ownerName, createdAt, ...updatedData } =
+      req.body;
 
     const result = await studiosCollection.updateOne(
       {
@@ -265,7 +245,7 @@ app.put('/studios/:id', verifySession, async (req, res) => {
       },
       {
         $set: updatedData,
-      }
+      },
     );
 
     if (result.matchedCount === 0) {
@@ -284,9 +264,8 @@ app.put('/studios/:id', verifySession, async (req, res) => {
   }
 });
 
-
 // DELETE: Studio (Owner Only)
-app.delete('/studios/:id', verifySession, async (req, res) => {
+app.delete("/studios/:id", verifySession, async (req, res) => {
   try {
     const id = req.params.id;
 
@@ -315,17 +294,10 @@ app.delete('/studios/:id', verifySession, async (req, res) => {
   }
 });
 
-
 // POST: Create Booking
-app.post('/bookings', verifySession, async (req, res) => {
+app.post("/bookings", verifySession, async (req, res) => {
   try {
-    const {
-      studioId,
-      date,
-      startTime,
-      duration,
-      guests,
-    } = req.body;
+    const { studioId, date, startTime, duration, guests } = req.body;
 
     // Validate required fields
     if (!studioId || !date || !startTime || !duration || !guests) {
@@ -386,12 +358,16 @@ app.post('/bookings', verifySession, async (req, res) => {
       });
     }
 
-    // Check overlapping bookings
-    const existingBookings = await bookingCollection.find({
-      studioId,
-      date,
-      status: { $nin: ["cancelled", "Cancelled"] },
-    }).toArray();
+    // Check overlapping Pending and Confirmed bookings
+    const existingBookings = await bookingCollection
+      .find({
+        studioId,
+        date,
+        status: {
+          $in: ["Pending", "pending", "Confirmed", "confirmed"],
+        },
+      })
+      .toArray();
 
     const hasConflict = existingBookings.some((booking) => {
       const oldStart = toMinutes(booking.startTime);
@@ -445,7 +421,6 @@ app.post('/bookings', verifySession, async (req, res) => {
       message: "Booking request submitted successfully",
       bookingId: result.insertedId,
     });
-
   } catch (error) {
     console.error("Booking error:", error);
 
@@ -455,9 +430,8 @@ app.post('/bookings', verifySession, async (req, res) => {
   }
 });
 
-
 // PATCH: Cancel Booking
-app.patch('/bookings/:id/cancel', verifySession, async (req, res) => {
+app.patch("/bookings/:id/cancel", verifySession, async (req, res) => {
   try {
     const id = req.params.id;
 
@@ -478,7 +452,7 @@ app.patch('/bookings/:id/cancel', verifySession, async (req, res) => {
           status: "Cancelled",
           cancelledAt: new Date(),
         },
-      }
+      },
     );
 
     if (result.matchedCount === 0) {
@@ -490,7 +464,6 @@ app.patch('/bookings/:id/cancel', verifySession, async (req, res) => {
     res.send({
       message: "Booking cancelled successfully",
     });
-
   } catch (error) {
     console.error("Cancel booking error:", error);
 
@@ -500,9 +473,8 @@ app.patch('/bookings/:id/cancel', verifySession, async (req, res) => {
   }
 });
 
-
 // GET: My Bookings
-app.get('/my-bookings', verifySession, async (req, res) => {
+app.get("/my-bookings", verifySession, async (req, res) => {
   try {
     // Find bookings belonging to the logged-in user
     const bookings = await bookingCollection
@@ -526,9 +498,7 @@ app.get('/my-bookings', verifySession, async (req, res) => {
 
         const endTime =
           booking.hours?.[1] ||
-          formatTime(
-            toMinutes(startTime) + Number(booking.duration || 1) * 60
-          );
+          formatTime(toMinutes(startTime) + Number(booking.duration || 1) * 60);
 
         return {
           id: booking._id.toString(),
@@ -536,18 +506,18 @@ app.get('/my-bookings', verifySession, async (req, res) => {
           studioTitle: booking.studioTitle || studio?.title || "Studio",
           studioImage: booking.studioImage || studio?.image || "",
           category: booking.category || studio?.category || "Photo Studios",
-          location: booking.location || studio?.location || "Location unavailable",
+          location:
+            booking.location || studio?.location || "Location unavailable",
           date: booking.date,
           hours: [startTime, endTime],
           guests: Number(booking.guests || 1),
           total: Number(booking.total || 0),
           status: formatStatus(booking.status),
         };
-      })
+      }),
     );
 
     res.send(formattedBookings);
-
   } catch (error) {
     console.error("Failed to fetch my bookings:", error);
 
@@ -557,9 +527,8 @@ app.get('/my-bookings', verifySession, async (req, res) => {
   }
 });
 
-
 // GET: Dashboard Data
-app.get('/dashboard', verifySession, async (req, res) => {
+app.get("/dashboard", verifySession, async (req, res) => {
   try {
     // Find studios owned by the logged-in user
     const studios = await studiosCollection
@@ -591,10 +560,7 @@ app.get('/dashboard', verifySession, async (req, res) => {
           !["cancelled", "Cancelled"].includes(booking.status)
         );
       })
-      .reduce(
-        (total, booking) => total + Number(booking.total || 0),
-        0
-      );
+      .reduce((total, booking) => total + Number(booking.total || 0), 0);
 
     // Calculate average studio rating
     const ratings = studios
@@ -604,9 +570,8 @@ app.get('/dashboard', verifySession, async (req, res) => {
     const averageRating = ratings.length
       ? Number(
           (
-            ratings.reduce((sum, rating) => sum + rating, 0) /
-            ratings.length
-          ).toFixed(1)
+            ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length
+          ).toFixed(1),
         )
       : 0;
 
@@ -622,8 +587,7 @@ app.get('/dashboard', verifySession, async (req, res) => {
     res.send({
       summary: {
         totalBookings: bookings.filter(
-          (booking) =>
-            !["cancelled", "Cancelled"].includes(booking.status)
+          (booking) => !["cancelled", "Cancelled"].includes(booking.status),
         ).length,
         earnings: recentEarnings,
         averageRating,
@@ -631,7 +595,6 @@ app.get('/dashboard', verifySession, async (req, res) => {
       },
       recentActivity,
     });
-
   } catch (error) {
     console.error("Dashboard data error:", error);
 
@@ -641,12 +604,10 @@ app.get('/dashboard', verifySession, async (req, res) => {
   }
 });
 
-
 // Test Route
-app.get('/', (req, res) => {
-  res.send('SceneSlot server is running!');
+app.get("/", (req, res) => {
+  res.send("SceneSlot server is running!");
 });
-
 
 // Start Server
 app.listen(PORT, () => {
