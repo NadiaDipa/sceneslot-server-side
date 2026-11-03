@@ -8,7 +8,7 @@ import fs from "fs";
 import { fileURLToPath } from "url";
 import "dotenv/config";
 import { auth } from "./auth.js";
-import { fromNodeHeaders } from "better-auth/node";
+import { fromNodeHeaders, toNodeHandler } from "better-auth/node";
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -56,6 +56,10 @@ app.use(
   }),
 );
 
+// Better Auth Handler
+app.all("/api/auth/*splat", toNodeHandler(auth));
+
+// Parse JSON request body
 app.use(express.json());
 
 // MongoDB Connection
@@ -189,7 +193,7 @@ app.get("/featured-studios", async (req, res) => {
 });
 
 // POST: Image Upload
-app.post("/upload", upload.single("image"), (req, res) => {
+app.post("/upload", verifySession, upload.single("image"), (req, res) => {
   if (!req.file) {
     return res.status(400).send({
       error: "No image uploaded",
@@ -476,7 +480,6 @@ app.patch("/bookings/:id/cancel", verifySession, async (req, res) => {
 // GET: My Bookings
 app.get("/my-bookings", verifySession, async (req, res) => {
   try {
-    // Find bookings belonging to the logged-in user
     const bookings = await bookingCollection
       .find({
         userEmail: req.user.email,
@@ -484,10 +487,8 @@ app.get("/my-bookings", verifySession, async (req, res) => {
       .sort({ createdAt: -1 })
       .toArray();
 
-    // Prepare data for BookingCard
     const formattedBookings = await Promise.all(
       bookings.map(async (booking) => {
-        // Get studio details for older bookings
         const studio = ObjectId.isValid(booking.studioId)
           ? await studiosCollection.findOne({
               _id: new ObjectId(booking.studioId),
@@ -530,14 +531,12 @@ app.get("/my-bookings", verifySession, async (req, res) => {
 // GET: Dashboard Data
 app.get("/dashboard", verifySession, async (req, res) => {
   try {
-    // Find studios owned by the logged-in user
     const studios = await studiosCollection
       .find(getStudioOwnerFilter(req.user))
       .toArray();
 
     const studioIds = studios.map((studio) => studio._id.toString());
 
-    // Find bookings for those studios
     const bookings = studioIds.length
       ? await bookingCollection
           .find({
