@@ -51,7 +51,10 @@ const upload = multer({
 // Middlewares
 app.use(
   cors({
-    origin: "http://localhost:3000",
+    origin: [
+      "http://localhost:3000",
+      "http://localhost:3001",
+    ],
     credentials: true,
   })
 );
@@ -109,6 +112,18 @@ async function verifySession(req, res, next) {
 }
 
 
+// Studio ownership filter
+function getStudioOwnerFilter(user) {
+  return {
+    $or: [
+      { ownerId: user.id },
+      { ownerEmail: user.email },
+      { "host.email": user.email },
+    ],
+  };
+}
+
+
 // Convert time to minutes
 function toMinutes(time) {
   const [hour, minute] = time.split(":").map(Number);
@@ -146,12 +161,22 @@ app.get('/studios', async (req, res) => {
 
 
 // POST: Add Studio
-app.post('/studios', async (req, res) => {
+app.post('/studios', verifySession, async (req, res) => {
   try {
-    const studioData = req.body;
+    const studioData = {
+      ...req.body,
+      ownerId: req.user.id,
+      ownerEmail: req.user.email,
+      ownerName: req.user.name,
+      createdAt: new Date(),
+    };
+
     const result = await studiosCollection.insertOne(studioData);
 
-    res.send(result);
+    res.status(201).send({
+      message: "Studio added successfully",
+      insertedId: result.insertedId,
+    });
   } catch (error) {
     console.error("Failed to add studio:", error);
     res.status(500).send({ message: "Failed to add studio" });
@@ -215,8 +240,8 @@ app.get('/studios/:id', async (req, res) => {
 });
 
 
-// PUT: Update Studio
-app.put('/studios/:id', async (req, res) => {
+// PUT: Update Studio (Owner Only)
+app.put('/studios/:id', verifySession, async (req, res) => {
   try {
     const id = req.params.id;
 
@@ -224,14 +249,35 @@ app.put('/studios/:id', async (req, res) => {
       return res.status(400).send({ message: "Invalid studio ID" });
     }
 
-    const updatedData = req.body;
+    // Prevent changing ownership through request body
+    const {
+      ownerId,
+      ownerEmail,
+      ownerName,
+      createdAt,
+      ...updatedData
+    } = req.body;
 
     const result = await studiosCollection.updateOne(
-      { _id: new ObjectId(id) },
-      { $set: updatedData }
+      {
+        _id: new ObjectId(id),
+        ...getStudioOwnerFilter(req.user),
+      },
+      {
+        $set: updatedData,
+      }
     );
 
-    res.send(result);
+    if (result.matchedCount === 0) {
+      return res.status(404).send({
+        message: "Studio not found or you are not the owner",
+      });
+    }
+
+    res.send({
+      message: "Studio updated successfully",
+      modifiedCount: result.modifiedCount,
+    });
   } catch (error) {
     console.error("Failed to update studio:", error);
     res.status(500).send({ message: "Failed to update studio" });
@@ -239,8 +285,8 @@ app.put('/studios/:id', async (req, res) => {
 });
 
 
-// DELETE: Studio
-app.delete('/studios/:id', async (req, res) => {
+// DELETE: Studio (Owner Only)
+app.delete('/studios/:id', verifySession, async (req, res) => {
   try {
     const id = req.params.id;
 
@@ -250,9 +296,19 @@ app.delete('/studios/:id', async (req, res) => {
 
     const result = await studiosCollection.deleteOne({
       _id: new ObjectId(id),
+      ...getStudioOwnerFilter(req.user),
     });
 
-    res.send(result);
+    if (result.deletedCount === 0) {
+      return res.status(404).send({
+        message: "Studio not found or you are not the owner",
+      });
+    }
+
+    res.send({
+      message: "Studio deleted successfully",
+      deletedCount: result.deletedCount,
+    });
   } catch (error) {
     console.error("Failed to delete studio:", error);
     res.status(500).send({ message: "Failed to delete studio" });
@@ -497,6 +553,90 @@ app.get('/my-bookings', verifySession, async (req, res) => {
 
     res.status(500).send({
       message: "Failed to fetch bookings",
+    });
+  }
+});
+
+
+// GET: Dashboard Data
+app.get('/dashboard', verifySession, async (req, res) => {
+  try {
+    // Find studios owned by the logged-in user
+    const studios = await studiosCollection
+      .find(getStudioOwnerFilter(req.user))
+      .toArray();
+
+    const studioIds = studios.map((studio) => studio._id.toString());
+
+    // Find bookings for those studios
+    const bookings = studioIds.length
+      ? await bookingCollection
+          .find({
+            studioId: { $in: studioIds },
+          })
+          .sort({ createdAt: -1 })
+          .toArray()
+      : [];
+
+    // Calculate earnings for the last 30 days
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const recentEarnings = bookings
+      .filter((booking) => {
+        const createdAt = new Date(booking.createdAt);
+
+        return (
+          createdAt >= thirtyDaysAgo &&
+          !["cancelled", "Cancelled"].includes(booking.status)
+        );
+      })
+      .reduce(
+        (total, booking) => total + Number(booking.total || 0),
+        0
+      );
+
+    // Calculate average studio rating
+    const ratings = studios
+      .map((studio) => Number(studio.rating))
+      .filter((rating) => Number.isFinite(rating) && rating > 0);
+
+    const averageRating = ratings.length
+      ? Number(
+          (
+            ratings.reduce((sum, rating) => sum + rating, 0) /
+            ratings.length
+          ).toFixed(1)
+        )
+      : 0;
+
+    // Prepare recent activity
+    const recentActivity = bookings.slice(0, 4).map((booking) => ({
+      id: booking._id.toString(),
+      title: `New booking request — ${booking.studioTitle || "Studio"}`,
+      detail: `${booking.date} · ${booking.startTime || ""} · ${booking.guests || 1} guests`,
+      status: formatStatus(booking.status),
+      createdAt: booking.createdAt,
+    }));
+
+    res.send({
+      summary: {
+        totalBookings: bookings.filter(
+          (booking) =>
+            !["cancelled", "Cancelled"].includes(booking.status)
+        ).length,
+        earnings: recentEarnings,
+        averageRating,
+        totalListings: studios.length,
+      },
+      recentActivity,
+    });
+
+  } catch (error) {
+    console.error("Dashboard data error:", error);
+
+    res.status(500).send({
+      message: "Failed to fetch dashboard data",
     });
   }
 });
