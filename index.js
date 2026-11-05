@@ -10,6 +10,14 @@ import { fromNodeHeaders, toNodeHandler } from "better-auth/node";
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// CORS Configuration
+app.use(
+  cors({
+    origin: process.env.CLIENT_URL,
+    credentials: true,
+  }),
+);
+
 // Multer image storage (memory)
 const storage = multer.memoryStorage();
 
@@ -27,14 +35,6 @@ const upload = multer({
     }
   },
 });
-
-// Middlewares
-app.use(
-  cors({
-    origin: ["http://localhost:3000", "http://localhost:3001"],
-    credentials: true,
-  }),
-);
 
 // Better Auth Handler
 app.all("/api/auth/*splat", toNodeHandler(auth));
@@ -669,8 +669,6 @@ app.get("/", (req, res) => {
   res.send("SceneSlot server is running!");
 });
 
-
-
 // Multer / general error handler
 app.use((err, req, res, next) => {
   if (err instanceof multer.MulterError) {
@@ -679,13 +677,16 @@ app.use((err, req, res, next) => {
       LIMIT_FILE_COUNT: "You can upload a maximum of 3 images.",
       LIMIT_UNEXPECTED_FILE: "You can upload a maximum of 3 images.",
     };
+
     return res
       .status(400)
       .send({ message: messages[err.code] || err.message });
   }
 
   if (err) {
-    return res.status(400).send({ message: err.message || "Request failed" });
+    return res.status(400).send({
+      message: err.message || "Request failed",
+    });
   }
 
   next();
