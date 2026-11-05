@@ -3,9 +3,6 @@ import express from "express";
 import cors from "cors";
 import { MongoClient, ObjectId } from "mongodb";
 import multer from "multer";
-import path from "path";
-import fs from "fs";
-import { fileURLToPath } from "url";
 import "dotenv/config";
 import { auth } from "./auth.js";
 import { fromNodeHeaders, toNodeHandler } from "better-auth/node";
@@ -13,32 +10,15 @@ import { fromNodeHeaders, toNodeHandler } from "better-auth/node";
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Uploads folder
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const uploadsDir = path.join(__dirname, "uploads");
-
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
-
-// Serve uploaded images
-app.use("/uploads", express.static(uploadsDir));
-
-// Multer image storage
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadsDir),
-  filename: (req, file, cb) => {
-    const unique = Date.now() + "-" + Math.round(Math.random() * 1e6);
-    const ext = path.extname(file.originalname).toLowerCase();
-
-    cb(null, `studio-${unique}${ext}`);
-  },
-});
+// Multer image storage (memory)
+const storage = multer.memoryStorage();
 
 const upload = multer({
   storage,
-  limits: { fileSize: 20 * 1024 * 1024 },
+  limits: {
+    fileSize: 20 * 1024 * 1024,
+    files: 3,
+  },
   fileFilter: (req, file, cb) => {
     if (file.mimetype.startsWith("image/")) {
       cb(null, true);
@@ -71,7 +51,7 @@ async function connectToMongoDB() {
     console.log("You successfully connected to MongoDB!");
     return client;
   } catch (err) {
-    console.dir(err);
+    console.error("MongoDB connection failed:", err);
     throw err;
   }
 }
@@ -153,6 +133,24 @@ app.get("/studios", async (req, res) => {
   }
 });
 
+// GET: My Listings
+app.get("/my-listings", verifySession, async (req, res) => {
+  try {
+    const myStudios = await studiosCollection
+      .find(getStudioOwnerFilter(req.user))
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    res.send(myStudios);
+  } catch (error) {
+    console.error("Failed to fetch my listings:", error);
+
+    res.status(500).send({
+      message: "Failed to fetch my listings",
+    });
+  }
+});
+
 // POST: Add Studio
 app.post("/studios", verifySession, async (req, res) => {
   try {
@@ -176,7 +174,7 @@ app.post("/studios", verifySession, async (req, res) => {
   }
 });
 
-// GET: Featured Studios (Latest 6)
+// GET: Featured Studios
 app.get("/featured-studios", async (req, res) => {
   try {
     const result = await studiosCollection
@@ -192,18 +190,67 @@ app.get("/featured-studios", async (req, res) => {
   }
 });
 
-// POST: Image Upload
-app.post("/upload", verifySession, upload.single("image"), (req, res) => {
-  if (!req.file) {
-    return res.status(400).send({
-      error: "No image uploaded",
-    });
-  }
+// POST: Upload Multiple Images to ImgBB
+app.post(
+  "/upload",
+  verifySession,
+  upload.array("images", 3),
+  async (req, res) => {
+    try {
+      if (!process.env.IMGBB_API_KEY) {
+        return res.status(500).send({
+          message: "ImgBB API key is missing",
+        });
+      }
 
-  const imageUrl = `http://localhost:${PORT}/uploads/${req.file.filename}`;
+      const files = req.files;
 
-  res.send({ imageUrl });
-});
+      if (!files || files.length === 0) {
+        return res.status(400).send({
+          message: "No images uploaded",
+        });
+      }
+
+      const gallery = [];
+
+      for (const file of files) {
+        const formData = new FormData();
+
+        formData.append("image", file.buffer.toString("base64"));
+
+        const response = await fetch(
+          `https://api.imgbb.com/1/upload?key=${encodeURIComponent(process.env.IMGBB_API_KEY)}`,
+          {
+            method: "POST",
+            body: formData,
+          },
+        );
+
+        const result = await response.json();
+
+        if (!response.ok || !result.success || !result.data?.url) {
+          throw new Error(
+            result.error?.message || "Failed to upload image to ImgBB",
+          );
+        }
+
+        gallery.push(result.data.url);
+      }
+
+      res.status(200).send({
+        message: "Images uploaded successfully",
+        gallery,
+        image: gallery[0],
+      });
+    } catch (error) {
+      console.error("Image upload failed:", error);
+
+      res.status(500).send({
+        message: error.message || "Failed to upload images",
+      });
+    }
+  },
+);
 
 // GET: Single Studio Details
 app.get("/studios/:id", async (req, res) => {
@@ -229,7 +276,7 @@ app.get("/studios/:id", async (req, res) => {
   }
 });
 
-// PUT: Update Studio (Owner Only)
+// PUT: Update Studio
 app.put("/studios/:id", verifySession, async (req, res) => {
   try {
     const id = req.params.id;
@@ -238,7 +285,6 @@ app.put("/studios/:id", verifySession, async (req, res) => {
       return res.status(400).send({ message: "Invalid studio ID" });
     }
 
-    // Prevent changing ownership through request body
     const { ownerId, ownerEmail, ownerName, createdAt, ...updatedData } =
       req.body;
 
@@ -268,7 +314,7 @@ app.put("/studios/:id", verifySession, async (req, res) => {
   }
 });
 
-// DELETE: Studio (Owner Only)
+// DELETE: Studio
 app.delete("/studios/:id", verifySession, async (req, res) => {
   try {
     const id = req.params.id;
@@ -303,7 +349,6 @@ app.post("/bookings", verifySession, async (req, res) => {
   try {
     const { studioId, date, startTime, duration, guests } = req.body;
 
-    // Validate required fields
     if (!studioId || !date || !startTime || !duration || !guests) {
       return res.status(400).send({
         message: "All fields are required",
@@ -329,7 +374,6 @@ app.post("/bookings", verifySession, async (req, res) => {
       });
     }
 
-    // Validate start time
     if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(startTime)) {
       return res.status(400).send({
         message: "Invalid start time",
@@ -345,7 +389,6 @@ app.post("/bookings", verifySession, async (req, res) => {
       });
     }
 
-    // Find studio
     const studio = await studiosCollection.findOne({
       _id: new ObjectId(studioId),
     });
@@ -386,12 +429,10 @@ app.post("/bookings", verifySession, async (req, res) => {
       });
     }
 
-    // Calculate price using database values
     const subtotal = studio.hourlyRate * hours;
     const serviceFee = Math.round(subtotal * 0.08);
     const total = subtotal + serviceFee + studio.deposit;
 
-    // Booking data
     const bookingData = {
       studioId,
       studioTitle: studio.title,
@@ -499,7 +540,9 @@ app.get("/my-bookings", verifySession, async (req, res) => {
 
         const endTime =
           booking.hours?.[1] ||
-          formatTime(toMinutes(startTime) + Number(booking.duration || 1) * 60);
+          formatTime(
+            toMinutes(startTime) + Number(booking.duration || 1) * 60,
+          );
 
         return {
           id: booking._id.toString(),
@@ -531,34 +574,48 @@ app.get("/my-bookings", verifySession, async (req, res) => {
 // GET: Dashboard Data
 app.get("/dashboard", verifySession, async (req, res) => {
   try {
+    // Get logged-in user's studios
     const studios = await studiosCollection
       .find(getStudioOwnerFilter(req.user))
       .toArray();
 
-    const studioIds = studios.map((studio) => studio._id.toString());
+    const ownedIdStrings = studios.map((studio) => studio._id.toString());
 
-    const bookings = studioIds.length
-      ? await bookingCollection
-          .find({
-            studioId: { $in: studioIds },
-          })
-          .sort({ createdAt: -1 })
-          .toArray()
-      : [];
+    console.log("Dashboard user:", req.user.email);
+    console.log("Dashboard studio IDs:", ownedIdStrings);
 
-    // Calculate earnings for the last 30 days
+    // Bookings received on my studios + bookings I made myself
+    const bookings = await bookingCollection
+      .find({
+        $or: [
+          { studioId: { $in: ownedIdStrings } },
+          { studioId: { $in: studios.map((studio) => studio._id) } },
+          { userEmail: req.user.email },
+        ],
+      })
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    console.log("Dashboard bookings count:", bookings.length);
+
+    // Booking is "received" when it was made on one of my studios
+    const isReceived = (booking) =>
+      ownedIdStrings.includes(String(booking.studioId));
+
+    const isCancelled = (booking) =>
+      String(booking.status || "").toLowerCase() === "cancelled";
+
+    // Earnings for the last 30 days
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
     const recentEarnings = bookings
-      .filter((booking) => {
-        const createdAt = new Date(booking.createdAt);
-
-        return (
-          createdAt >= thirtyDaysAgo &&
-          !["cancelled", "Cancelled"].includes(booking.status)
-        );
-      })
+      .filter(
+        (booking) =>
+          isReceived(booking) &&
+          new Date(booking.createdAt) >= thirtyDaysAgo &&
+          !isCancelled(booking),
+      )
       .reduce((total, booking) => total + Number(booking.total || 0), 0);
 
     // Calculate average studio rating
@@ -569,7 +626,8 @@ app.get("/dashboard", verifySession, async (req, res) => {
     const averageRating = ratings.length
       ? Number(
           (
-            ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length
+            ratings.reduce((sum, rating) => sum + rating, 0) /
+            ratings.length
           ).toFixed(1),
         )
       : 0;
@@ -577,17 +635,20 @@ app.get("/dashboard", verifySession, async (req, res) => {
     // Prepare recent activity
     const recentActivity = bookings.slice(0, 4).map((booking) => ({
       id: booking._id.toString(),
-      title: `New booking request — ${booking.studioTitle || "Studio"}`,
+      title: isReceived(booking)
+        ? `New booking request — ${booking.studioTitle || "Studio"}`
+        : `You booked — ${booking.studioTitle || "Studio"}`,
       detail: `${booking.date} · ${booking.startTime || ""} · ${booking.guests || 1} guests`,
       status: formatStatus(booking.status),
       createdAt: booking.createdAt,
     }));
 
+    console.log("Dashboard recent activity:", recentActivity.length);
+
     res.send({
       summary: {
-        totalBookings: bookings.filter(
-          (booking) => !["cancelled", "Cancelled"].includes(booking.status),
-        ).length,
+        totalBookings: bookings.filter((booking) => !isCancelled(booking))
+          .length,
         earnings: recentEarnings,
         averageRating,
         totalListings: studios.length,
@@ -606,6 +667,28 @@ app.get("/dashboard", verifySession, async (req, res) => {
 // Test Route
 app.get("/", (req, res) => {
   res.send("SceneSlot server is running!");
+});
+
+
+
+// Multer / general error handler
+app.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    const messages = {
+      LIMIT_FILE_SIZE: "Each image must be smaller than 20 MB.",
+      LIMIT_FILE_COUNT: "You can upload a maximum of 3 images.",
+      LIMIT_UNEXPECTED_FILE: "You can upload a maximum of 3 images.",
+    };
+    return res
+      .status(400)
+      .send({ message: messages[err.code] || err.message });
+  }
+
+  if (err) {
+    return res.status(400).send({ message: err.message || "Request failed" });
+  }
+
+  next();
 });
 
 // Start Server
