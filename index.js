@@ -692,7 +692,12 @@ app.use((err, req, res, next) => {
   next();
 });
 
-// Start Server
-app.listen(PORT, () => {
-  console.log(`Server is running on port: ${PORT}`);
-});
+
+// Start Server (Vercel runs the exported app itself)
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`Server is running on port: ${PORT}`);
+  });
+}
+
+export default app;
