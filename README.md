@@ -5,7 +5,7 @@ SceneSlot is the backend application for the SceneSlot Creative Studio Booking P
 ## Related Links
 
 - **Live Website:** [SceneSlot](https://sceneslot-client.vercel.app)
-- **Client Repository:** [SceneSlot Client](https://github.com/NadiaDipa/spaceslot-client-side)
+- **Client Repository:** [SceneSlot Client](https://github.com/NadiaDipa/sceneslot-client-side)
 - **Server Repository:** [SceneSlot Server](https://github.com/NadiaDipa/sceneslot-server-side)
 
 ## Features
@@ -32,14 +32,14 @@ SceneSlot is the backend application for the SceneSlot Creative Studio Booking P
 
 ### 1. Clone the Repository
 
-```javascript
-git clone https://github.com/NadiaDipa/sceneslot-server-side.git
+```bash
+git clone https://github.com/NadiaDipa/sceneslot-server-side.git sceneslot-server
 cd sceneslot-server
 ```
 
 ### 2. Install Dependencies
 
-```javascript
+```bash
 npm install
 ```
 
@@ -47,7 +47,7 @@ npm install
 
 Create a `.env` file in the root directory:
 
-```javascript
+```env
 PORT=5000
 MONGODB_URI=your_mongodb_connection_string
 BETTER_AUTH_SECRET=your_auth_secret
@@ -61,7 +61,7 @@ Replace the placeholder values with your own credentials.
 
 ### 4. Run the Server
 
-```javascript
+```bash
 npm run dev
 ```
 
