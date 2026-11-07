@@ -26,7 +26,6 @@ SceneSlot is the backend application for the SceneSlot Creative Studio Booking P
 | Express.js | Backend framework |
 | MongoDB | Database |
 | Better Auth | Authentication |
-| File handling |
 | ImgBB | Image hosting |
 
 ## Local Setup
